@@ -20,7 +20,7 @@ load_dotenv()
 DASHSCOPE_API_KEY = os.getenv('DASHSCOPE_API_KEY')
 API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis'
 
-def try_ai_generation(prompt: str, image_path: str = None, description: str = "") -> Tuple[bool, Optional[str]]:
+def try_ai_generation(prompt: str, image_path: str = None, description: str = "", n: int = 1) -> Tuple[bool, Optional[str]]:
     """
     尝试使用阿里云通义万相AI生成图片
     接口与原有 try_ai_generation 完全一致
@@ -52,7 +52,7 @@ def try_ai_generation(prompt: str, image_path: str = None, description: str = ""
             'parameters': {
                 'size': '1024*1024',
                 'style': '<auto>',
-                'n': 1,
+                'n': n,  # 使用传入的生成数量参数
                 'seed': int(time.time() % 100000),
             }
         }
@@ -88,7 +88,7 @@ def try_ai_generation(prompt: str, image_path: str = None, description: str = ""
                     headers=headers,
                     json=json_data,
                     timeout=30,
-                    verify=False  # 阿里云API可能需要关闭验证
+                    verify=False  
                 )
                 
                 if response.status_code == 200:
@@ -192,12 +192,24 @@ def _poll_task_result(task_id: str, max_attempts: int = 25, interval: int = 1) -
             # 成功状态
             if task_status == 'SUCCEEDED':
                 results = result.get('output', {}).get('results', [])
-                if results and results[0].get('url'):
-                    image_url = results[0]['url']
-                    print(f"📷 获取到生成图片URL")
-                    
-                    # 下载图片
-                    return _download_image(image_url)
+                if results:
+                    image_base64_list = []
+                    for i, result_item in enumerate(results):
+                        if result_item.get('url'):
+                            print(f"📷 获取到生成图片{i+1} URL")
+                            # 下载图片并转换为base64
+                            image_base64 = _download_image(result_item['url'])
+                            if image_base64:
+                                image_base64_list.append(image_base64)
+
+                    # 返回结果：单张图片返回字符串，多张图片返回列表
+                    if len(image_base64_list) == 1:
+                        return image_base64_list[0]
+                    elif len(image_base64_list) > 1:
+                        return image_base64_list
+                    else:
+                        print("❌ 未找到生成的图片")
+                        return None
                 else:
                     print("❌ 未找到生成的图片")
                     return None

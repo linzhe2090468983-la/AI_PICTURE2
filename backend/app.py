@@ -117,16 +117,6 @@ def apply_image_effects(img, model, style, brightness, contrast, saturation):
     
     return img
 
-#def try_ai_generation(prompt, image_path=None):
-    """尝试使用AI生成图片"""
-    try:
-        # 这里可以调用各种AI API
-        # 暂时返回失败，使用本地处理
-        return False, None
-    except Exception as e:
-        print(f"AI生成失败: {e}")
-        return False, None
-
 @app.route('/register', methods=['POST'])
 def register():
     """用户注册端点"""
@@ -235,7 +225,20 @@ def generate_image():
         # 获取参数
         model = request.form.get('model', 'creative')
         style = request.form.get('style', 'banner')
+        
+        # 修复：确保从前端接收到的description被正确获取和处理
         description = request.form.get('description', '')  # 获取用户输入的描述
+        print(f"📝 用户输入的description: '{description}'")
+        print(f"📝 description类型: {type(description)}")
+        print(f"📝 description长度: {len(description)}")
+        
+        # 确保description不为空时才使用它
+        if description and description.strip():
+            description = description.strip()
+            print(f"📝 清理后的description: '{description}'")
+        else:
+            print("⚠️  收到的description为空或仅包含空白字符")
+
         session_id = request.form.get('session_id', str(uuid.uuid4()))  # 获取会话ID，如果未提供则生成新的
         
         # 获取调整参数，转换为整数
@@ -245,11 +248,18 @@ def generate_image():
             saturation = int(request.form.get('saturation', 0))
         except ValueError:
             brightness = contrast = saturation = 0
-        
+
         # 限制参数范围
         brightness = max(-50, min(50, brightness))
         contrast = max(-50, min(50, contrast))
         saturation = max(-50, min(50, saturation))
+
+        # 获取生成数量，默认1张，最多4张
+        try:
+            batch_count = int(request.form.get('batch_count', 1))
+        except ValueError:
+            batch_count = 1
+        batch_count = max(1, min(4, batch_count))  # 限制在1-4之间
         
         # 生成提示词 - 优先使用用户描述
         prompt = generate_prompt(model, style, brightness, contrast, saturation, description)
@@ -286,8 +296,8 @@ def generate_image():
         print(f"📝 提示词预览: {prompt[:100]}...")
         print(f"{'='*60}\n")
         
-        # 尝试使用AI大模型生成图片，传递上传的图片路径和描述
-        success, result = try_ai_generation(prompt, upload_path, description)
+        # 尝试使用AI大模型生成图片，传递上传的图片路径、描述和生成数量
+        success, result = try_ai_generation(prompt, upload_path, description, batch_count)
         
         # 调试信息：AI生成结果
         print(f"\n{'='*60}")
@@ -296,34 +306,64 @@ def generate_image():
         print(f"📦 result类型: {type(result)}")
         
         if success and result:
-            print(f"📏 result长度: {len(result)} 字符")
-            print(f"👀 result前50字符: {result[:50]}")
-            
-            # 检查是否是纯base64
-            import re
-            base64_pattern = re.compile(r'^[A-Za-z0-9+/]+=*$')
-            if result.startswith('data:image'):
-                print("🔍 检测: result已经是完整的data URL")
-                image_url = result
-            elif base64_pattern.match(result[:20]):
-                print("🔍 检测: result是纯base64格式")
-                image_url = f"data:image/png;base64,{result}"
+            # 处理批量生成的结果
+            if isinstance(result, list):
+                # 多张图片
+                image_urls = []
+                for i, img_result in enumerate(result):
+                    print(f"📏 图片{i+1}长度: {len(img_result)} 字符")
+                    print(f"👀 图片{i+1}前50字符: {img_result[:50]}")
+
+                    # 检查是否是纯base64
+                    import re
+                    base64_pattern = re.compile(r'^[A-Za-z0-9+/]+=*$')
+                    if img_result.startswith('data:image'):
+                        print(f"🔍 检测: 图片{i+1}已经是完整的data URL")
+                        img_url = img_result
+                    elif base64_pattern.match(img_result[:20]):
+                        print(f"🔍 检测: 图片{i+1}是纯base64格式")
+                        img_url = f"data:image/png;base64,{img_result}"
+                    else:
+                        print(f"⚠️  检测: 图片{i+1}格式未知，尝试作为base64处理")
+                        img_url = f"data:image/png;base64,{img_result}"
+
+                    image_urls.append(img_url)
+
+                image_url = image_urls[0]  # 主图片URL用于兼容性
             else:
-                print("⚠️  检测: result格式未知，尝试作为base64处理")
-                image_url = f"data:image/png;base64,{result}"
-                
-            print(f"🖼️  image_url长度: {len(image_url)}")
+                # 单张图片
+                print(f"📏 result长度: {len(result)} 字符")
+                print(f"👀 result前50字符: {result[:50]}")
+
+                # 检查是否是纯base64
+                import re
+                base64_pattern = re.compile(r'^[A-Za-z0-9+/]+=*$')
+                if result.startswith('data:image'):
+                    print("🔍 检测: result已经是完整的data URL")
+                    image_url = result
+                elif base64_pattern.match(result[:20]):
+                    print("🔍 检测: result是纯base64格式")
+                    image_url = f"data:image/png;base64,{result}"
+                else:
+                    print("⚠️  检测: result格式未知，尝试作为base64处理")
+                    image_url = f"data:image/png;base64,{result}"
+
+                image_urls = [image_url]
+
+            print(f"🖼️ 共生成 {len(image_urls)} 张图片")
             print(f"{'='*60}\n")
-            
+
             # AI生成成功，返回图片数据
             response_data = {
                 'success': True,
-                'image_url': image_url,
+                'image_url': image_url,  # 主图片URL用于兼容性
+                'image_urls': image_urls,  # 所有图片URL列表
                 'filename': f"ai_generated_{uuid.uuid4().hex}.png",
                 'model': model,
                 'style': style,
                 'prompt': prompt,
                 'session_id': session_id,  # 返回会话ID
+                'batch_count': len(image_urls),  # 返回实际生成的图片数量
                 'generated_by': 'aliyun_ai'  # 新增：标记生成来源
             }
             
@@ -495,6 +535,7 @@ def generate_from_text():
                 # 获取文本生成选项
                 prompt_type = data.get('prompt_type', 'standard')  # 提示词增强类型
                 image_size = data.get('image_size', '1024x1024')   # 图片尺寸
+                batch_count = int(data.get('batch_count', 1))     # 生成数量，默认1张
                 
                 print(f"提取结果:")
                 print(f"  prompt字段值: {data.get('prompt')}")
@@ -586,7 +627,7 @@ def generate_from_text():
             # 前端已经发送正确格式的尺寸，直接使用
             api_image_size = image_size if image_size else "1024*1024"
             print(f"使用的图片尺寸: {api_image_size}")
-            image_base64 = generate_with_qwen(full_prompt, api_image_size, prompt_type)
+            image_base64 = generate_with_qwen(full_prompt, api_image_size, prompt_type, batch_count)
         except Exception as api_error:
             print(f"API生成失败: {str(api_error)}")
             # 记录失败
@@ -616,19 +657,26 @@ def generate_from_text():
                 'time': datetime.now().isoformat()[:19],
                 'error': True
             })
-            
+
             # 保存失败记录到数据库（如果用户已登录）
             if user_id:
                 history_db.save_chat_message(user_id, session_id, 'system', error_msg)
-            
+
             return jsonify({
                 'success': False,
                 'error': error_msg,
                 'session_id': session_id
             }), 500
-        
-        # 构建完整的data URL
-        image_url = f"data:image/png;base64,{image_base64}"
+
+        # 处理批量生成的结果
+        if isinstance(image_base64, list):
+            # 多张图片
+            image_urls = [f"data:image/png;base64,{img_b64}" for img_b64 in image_base64]
+            image_url = image_urls[0]  # 主图片URL用于兼容性
+        else:
+            # 单张图片
+            image_url = f"data:image/png;base64,{image_base64}"
+            image_urls = [image_url]
         
         # 记录AI响应
         assistant_message = {
@@ -650,9 +698,11 @@ def generate_from_text():
         # 返回结果 - 返回 prompt 字段，与前端的字段名保持一致
         response_data = {
             'success': True,
-            'image_url': image_url,
+            'image_url': image_url,  # 主图片URL用于兼容性
+            'image_urls': image_urls,  # 所有图片URL列表
             'session_id': session_id,
             'prompt': text,  # 返回 prompt 字段，与前端保持一致
+            'batch_count': len(image_urls),  # 返回实际生成的图片数量
             'history_length': len(chat_history[session_id])
         }
         
@@ -691,7 +741,7 @@ def build_contextual_prompt(current_prompt, session_history):
     
     return "\n".join(context_parts)
 
-def generate_with_qwen(text, image_size="1024*1024", prompt_type="standard"):
+def generate_with_qwen(text, image_size="1024*1024", prompt_type="standard", batch_count=1):
     """
     使用通义万相API生成图片
 
@@ -699,6 +749,7 @@ def generate_with_qwen(text, image_size="1024*1024", prompt_type="standard"):
         text (str): 生成图片的提示词
         image_size (str): 图片尺寸，格式如"1024*1024"
         prompt_type (str): 提示词增强类型 ("standard", "creative", "professional")
+        batch_count (int): 生成图片的数量，默认1张
     """
     try:
         # API配置
@@ -725,7 +776,7 @@ def generate_with_qwen(text, image_size="1024*1024", prompt_type="standard"):
             },
             "parameters": {
                 "size": image_size,  # 使用前端选择的尺寸
-                "n": 1
+                "n": batch_count  # 使用用户选择的生成数量
             }
         }
         
@@ -765,13 +816,22 @@ def generate_with_qwen(text, image_size="1024*1024", prompt_type="standard"):
                 task_status = task_output.get("task_status")
                 
                 if task_status == "SUCCEEDED":
-                    image_url = task_output["results"][0]["url"]
-                    print(f"图片URL: {image_url}")
-                    # 下载图片
-                    img_response = requests.get(image_url, timeout=30)
-                    img_response.raise_for_status()
-                    # 转换为base64
-                    return base64.b64encode(img_response.content).decode('utf-8')
+                    results = task_output["results"]
+                    image_base64_list = []
+
+                    # 处理所有生成的结果
+                    for i, result in enumerate(results):
+                        image_url = result["url"]
+                        print(f"图片{i+1} URL: {image_url}")
+                        # 下载图片
+                        img_response = requests.get(image_url, timeout=30)
+                        img_response.raise_for_status()
+                        # 转换为base64
+                        image_base64 = base64.b64encode(img_response.content).decode('utf-8')
+                        image_base64_list.append(image_base64)
+
+                    # 如果只生成一张图片，返回单个base64；否则返回列表
+                    return image_base64_list if len(image_base64_list) > 1 else image_base64_list[0]
                 
                 elif task_status == "FAILED":
                     error_message = task_output.get("message", "未知错误")
@@ -1036,22 +1096,56 @@ def health_check():
         'output_folder': os.path.abspath(OUTPUT_FOLDER)
     })
 
+@app.route('/', methods=['GET'])
+def index():
+    """根路径 - API信息"""
+    return {
+        'message': 'AI电商宣传图生成器 API',
+        'version': '1.0.0',
+        'endpoints': {
+            'health': '/health',
+            'register': '/register',
+            'login': '/login',
+            'profile': '/profile',
+            'generate': '/generate',
+            'generate-from-text': '/generate-from-text',
+            'simple_test': '/simple_test',
+            'chat_history': '/chat_history/<session_id>',
+            'all_sessions': '/chat_history',
+            'generation_records': '/user/generation_records'
+        }
+    }
+
 if __name__ == '__main__':
-    print("AI电商宣传图生成器后端服务启动中...")
-    print("服务地址: http://localhost:5000")
-    print("前端地址: http://localhost:8000 (使用前端开发服务器)")
-    print("\n可用端点:")
-    print("  GET  /health                           健康检查")
-    print("  POST /register                        用户注册")
-    print("  POST /login                           用户登录")
-    print("  GET  /profile                         获取用户信息")
-    print("  POST /generate                         上传图片生成宣传图")
-    print("  POST /generate-from-text               文字描述生成宣传图")
-    print("  POST /simple_test                      简单风格测试")
-    print("  GET  /chat_history/<session_id>        获取特定会话的聊天历史")
-    print("  GET  /chat_history                     获取所有会话ID列表")
-    print("  DELETE /chat_history/<session_id>      清除特定会话的聊天历史")
-    print("  GET  /user/generation_records          获取用户生成记录")
-    print("\n" + "="*60)
+    print("=" * 60)
+    print("🚀 AI电商宣传图生成器后端服务启动中...")
+    print("📊 服务版本: 1.0.0")
+    print("💾 数据库: MySQL")
+    print("🤖 AI服务: 通义万相")
+    print()
+    print("📋 可用端点:")
+    print("  🔐 认证相关:")
+    print("    POST /register        用户注册")
+    print("    POST /login           用户登录")
+    print("    GET  /profile         获取用户信息")
+    print()
+    print("  🖼️  图片生成:")
+    print("    POST /generate        上传图片生成宣传图")
+    print("    POST /generate-from-text  文字描述生成图片")
+    print("    POST /simple_test     简单图片效果测试")
+    print()
+    print("  📚 历史记录:")
+    print("    GET  /chat_history           获取所有会话列表")
+    print("    GET  /chat_history/<id>      获取特定会话的聊天历史")
+    print("    DELETE /chat_history/<id>    删除聊天历史")
+    print("    GET  /user/generation_records 获取生成记录")
+    print()
+    print("  🏥 系统状态:")
+    print("    GET  /health          健康检查")
+    print("    GET  /                API信息")
+    print()
+    print("🌐 前端访问: http://localhost:8000")
+    print("🔗 后端API: http://localhost:5000")
+    print("=" * 60)
     
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -19,6 +19,10 @@ const imageChatHistory = document.getElementById('imageChatHistory'); // 新增�
 const imageControls = document.getElementById('imageControls');
 const textControls = document.getElementById('textControls');
 
+// 生成数量选择控件
+const imageBatchCount = document.getElementById('imageBatchCount');
+const textBatchCount = document.getElementById('textBatchCount');
+
 // 历史图片相关元素
 const imageHistory = document.getElementById('imageHistory');
 
@@ -286,9 +290,6 @@ function switchMethod(method) {
         imageControls.style.display = 'block';
         textControls.style.display = 'none';
         simpleTestBtn.style.display = 'block'; // 显示简单测试按钮
-
-        // 切换到图片模式时更新占位符
-        updateImageDescriptionPlaceholder();
     } else {
         imageMethodBtn.classList.remove('active');
         textMethodBtn.classList.add('active');
@@ -318,24 +319,6 @@ function updateTextInputPlaceholder() {
         textInput.placeholder = '请继续对话...';
     } else {
         textInput.placeholder = '请输入您想要生成的宣传图内容描述，例如：\'一个红色的T恤在白色背景上，旁边有促销文字\'\n提示：输入完成后按回车键或点击生成按钮即可创建图片';
-    }
-}
-
-/**
- * 更新图片描述输入框的占位符
- * 根据是否有图片聊天历史来显示不同的提示
- */
-function updateImageDescriptionPlaceholder() {
-    if (!imageDescription) return;
-
-    // 检查是否有图片聊天历史（除了空状态提示以外的消息）
-    const imageChatMessages = imageChatHistory.querySelectorAll('.chat-message');
-    const hasImageChatHistory = imageChatMessages.length > 0;
-
-    if (hasImageChatHistory) {
-        imageDescription.placeholder = '请继续对话...';
-    } else {
-        imageDescription.placeholder = '请输入对图片的详细描述，例如：\'红色T恤在白色背景上，专业摄影效果\'';
     }
 }
 
@@ -564,32 +547,34 @@ async function generateImagesFromUpload() {
     generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...';
     generateBtn.disabled = true;
 
-    // 获取用户输入的描述内容
-    const userDescription = imageDescription.value.trim();
+    // 获取图片描述 - 修复：保存描述内容在生成过程中保留
+    const description = imageDescription.value.trim();
 
-    // 立即添加用户输入到对话历史
-    if (userDescription) {
-        addImageChatMessage(userDescription, 'user');
-    } else {
-        addImageChatMessage(`使用图片生成新图片（无描述）`, 'user');
+    // 如果有描述，立即添加到图片生成对话历史并更新占位符
+    if (description) {
+        // 立即显示在上一次用户输入内容在对话历史中
+        addImageChatMessage(description, 'user');
+        // 立即清空输入框并设置占位符为"请继续对话..."
+        imageDescription.value = '';
+        imageDescription.placeholder = '请继续对话...';
     }
-
-    // 立即清空图片描述输入框，方便下次对话
-    imageDescription.value = '';
 
     // 获取滑块值 - 从HTML控件获取用户输入
     const brightness = parseInt(document.getElementById('brightness').value);
     const contrast = parseInt(document.getElementById('contrast').value);
     const saturation = parseInt(document.getElementById('saturation').value);
+
+    // 获取生成数量 - 从选择控件获取
+    const batchCount = parseInt(imageBatchCount.value);
     
     try {
         // 对选中的图片索引进行排序，确保按照上传顺序处理
         const sortedIndices = [...selectedImageIndices].sort((a, b) => a - b);
         
-        // 对每张选中的图片进行处理
-        for (const index of sortedIndices) {
+        // 并行处理所有选中的图片，提高效率
+        const promises = sortedIndices.map(async (index) => {
             const selectedImage = uploadedImages[index];  // 获取选中的图片
-            
+
             // 创建FormData对象 - 用于上传文件
             const formData = new FormData();
             formData.append('image', selectedImage.file);       // 图片文件
@@ -598,51 +583,64 @@ async function generateImagesFromUpload() {
             formData.append('brightness', brightness);         // 亮度值
             formData.append('contrast', contrast);             // 对比度值
             formData.append('saturation', saturation);          // 饱和度值
-            
-            // 添加图片描述
-            const description = imageDescription.value.trim();
+            formData.append('batch_count', batchCount);         // 生成数量
+
+            // 添加图片描述 - 修复：将用户输入的描述正确传递给后端
             if (description) {
                 formData.append('description', description);
             }
-            
+
             // 添加认证头
             const headers = {};
             if (authToken) {
                 headers['Authorization'] = `Bearer ${authToken}`;
             }
-            
+
             // 添加当前图片会话ID
             if (currentImageSessionId) {
                 formData.append('session_id', currentImageSessionId);
             }
-            
-            // 重要：发送HTTP请求到后端
+
+            // 发送HTTP请求到后端
             const response = await fetch('http://localhost:5000/generate', {
                 method: 'POST',      // POST方法
                 body: formData,      // 表单数据，包含文件和参数
                 headers: headers     // 添加认证头
                 // 注意：不需要设置Content-Type，浏览器会自动设置
             });
-            
+
             // 检查响应状态
             if (!response.ok) {
-                throw new Error('生成失败');
+                throw new Error(`图片 ${selectedImage.name} 生成失败`);
             }
-            
+
             // 解析JSON响应
             const data = await response.json();
-            
+
             // 更新当前图片会话ID（如果后端返回了新的会话ID）
             if (data.session_id) {
                 currentImageSessionId = data.session_id;
             }
-            
-            // 添加系统成功消息到对话历史
-            addImageChatMessage(`使用图片 "${selectedImage.name}" 生成了新图片`, 'system');
-            
-            // 显示生成结果（按生成顺序）
-            displayGeneratedImage(data.image_url, selectedImage.name, false, false);
-        }
+
+            // 显示生成结果（按生成顺序，新图片显示在前面）
+            const imageUrls = data.image_urls || [data.image_url];
+            imageUrls.forEach((url, index) => {
+                const timestamp = new Date().getTime();
+                const title = imageUrls.length > 1
+                    ? `${selectedImage.name}_${timestamp}_${index + 1}`
+                    : `${selectedImage.name}_${timestamp}`;
+                displayGeneratedImage(url, title, false, true);
+            });
+
+            // 添加到图片模式对话历史 - 记录生成结果
+            const imageCount = imageUrls.length;
+            addImageChatMessage(`图片 ${selectedImage.name} 生成 ${imageCount} 张变体成功`, 'system');
+
+            return data; // 返回数据以便后续处理
+        });
+
+        // 等待所有图片处理完成
+        await Promise.all(promises);
 
         // 刷新历史图片列表
         refreshImageHistory();
@@ -674,8 +672,9 @@ async function generateImagesFromText() {
     // 获取文本生成选项
     const promptType = document.getElementById('textPrompt').value;
     const imageSize = document.getElementById('imageSize').value;
+    const batchCount = parseInt(textBatchCount.value);
 
-    console.log('文本生成参数:', { promptType, imageSize });
+    console.log('文本生成参数:', { promptType, imageSize, batchCount });
     
     try {
         // 记录对话历史
@@ -697,6 +696,7 @@ async function generateImagesFromText() {
                 prompt: textContent,
                 prompt_type: promptType,
                 image_size: imageSize,
+                batch_count: batchCount,
                 session_id: currentSessionId  // 发送当前会话ID
             })
         });
@@ -713,10 +713,18 @@ async function generateImagesFromText() {
         }
         
         // 显示生成结果（最新生成的在前面）
-        displayGeneratedImage(data.image_url, `文本生成_${new Date().getTime()}`, false, true);
-        
+        const imageUrls = data.image_urls || [data.image_url];
+        imageUrls.forEach((url, index) => {
+            const timestamp = new Date().getTime();
+            const title = imageUrls.length > 1
+                ? `文本生成_${timestamp}_${index + 1}`
+                : `文本生成_${timestamp}`;
+            displayGeneratedImage(url, title, false, true);
+        });
+
         // 记录生成历史
-        addChatMessage(`已生成图片: ${textContent}`, 'system');
+        const imageCount = imageUrls.length;
+        addChatMessage(`已生成 ${imageCount} 张图片: ${textContent}`, 'system');
 
         // 刷新历史图片列表和聊天历史
         refreshImageHistory();
@@ -777,12 +785,9 @@ function addImageChatMessage(content, sender) {
     `;
     
     imageChatHistory.appendChild(messageElement);
-
+    
     // 滚动到底部
     imageChatHistory.scrollTop = imageChatHistory.scrollHeight;
-
-    // 更新图片描述输入框占位符
-    updateImageDescriptionPlaceholder();
 }
 
 // 简单风格测试（无需联网）
@@ -930,7 +935,7 @@ function displayGeneratedImage(imageUrl, originalName, isTest = false, prepend =
         if (resultsContainer.firstChild) {
             resultsContainer.insertBefore(resultItem, resultsContainer.firstChild);
         } else {
-    resultsContainer.appendChild(resultItem);
+            resultsContainer.appendChild(resultItem);
         }
     } else {
         // 按照生成顺序显示（用于图片上传）
@@ -984,9 +989,7 @@ function clearAll() {
 
     // 更新文本输入框占位符
     updateTextInputPlaceholder();
-    // 更新图片描述输入框占位符
-    updateImageDescriptionPlaceholder();
-
+    
     // 更新界面
     updatePreview();
     resultsContainer.innerHTML = `
@@ -1334,10 +1337,9 @@ function displayImageChatHistory(messages) {
         }
     });
 
-    // 如果有消息，滚动到底部并更新占位符
+    // 如果有消息，滚动到底部
     if (messages.length > 0) {
         imageChatHistory.scrollTop = imageChatHistory.scrollHeight;
-        updateImageDescriptionPlaceholder();
     } else {
         // 如果没有历史消息，显示空状态
         imageChatHistory.innerHTML = '<div class="empty-chat"><i class="fas fa-comment-slash"></i><p>暂无图片生成对话记录</p></div>';
@@ -1370,6 +1372,6 @@ function refreshChatHistory() {
  */
 function refreshImageChatHistory() {
     if (authToken) {
-        loadImageChatHistory();
+        loadImageChatHistory(); // 修复：应该是loadImageChatHistory
     }
 }

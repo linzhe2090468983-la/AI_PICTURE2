@@ -253,6 +253,17 @@
                                     <option value="4">4张</option>
                                 </select>
                             </div>
+                            
+                            <!-- 新增：图片尺寸选择 -->
+                            <div class="option-group">
+                                <label for="imageSize">图片尺寸：</label>
+                                <select id="imageSize">
+                                    <option value="1024*1024">标准正方形 (1024×1024)</option>
+                                    <option value="1280*720">宽屏横图 (1280×720)</option>
+                                    <option value="720*1280">竖版海报 (720×1280)</option>
+                                    <option value="768*1152">高清人像 (768×1152)</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -297,13 +308,13 @@
                             <i class="fas fa-vial"></i> 自定义调节生成图片
                         </button>
                         <button id="clearBtn" class="btn btn-clear">
-                            <i class="fas fa-trash"></i> 清空所有
+                            <i class="fas fa-trash"></i> 清空对话历史/生成结果
                         </button>
                     </div>
 
                     <!-- 历史图片记录 -->
                     <div class="image-history-section">
-                        <h3><i class="fas fa-images"></i> 历史图片</h3>
+                        <h3><i class="fas fa-images"></i> 历史图片 <small style="color: #666; font-size: 0.8em;">双击放大预览/作为参考图/下载图片</small></h3>
                         <div class="image-history-container" id="imageHistory">
                             <div class="empty-images">
                                 <i class="fas fa-image"></i>

@@ -120,6 +120,7 @@ class DatabaseConnection:
                 INDEX idx_timestamp (timestamp)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
+            
             # 图片模式聊天历史表
             """
             CREATE TABLE IF NOT EXISTS image_chat_history (

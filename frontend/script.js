@@ -23,6 +23,9 @@ const textControls = document.getElementById('textControls');
 const imageBatchCount = document.getElementById('imageBatchCount');
 const textBatchCount = document.getElementById('textBatchCount');
 
+// 新增：图片尺寸选择控件
+const imageSize = document.getElementById('imageSize');
+
 // 历史图片相关元素
 const imageHistory = document.getElementById('imageHistory');
 
@@ -547,17 +550,8 @@ async function generateImagesFromUpload() {
     generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...';
     generateBtn.disabled = true;
 
-    // 获取图片描述 - 修复：保存描述内容在生成过程中保留
+    // 获取图片描述
     const description = imageDescription.value.trim();
-
-    // 如果有描述，立即添加到图片生成对话历史并更新占位符
-    if (description) {
-        // 立即显示在上一次用户输入内容在对话历史中
-        addImageChatMessage(description, 'user');
-        // 立即清空输入框并设置占位符为"请继续对话..."
-        imageDescription.value = '';
-        imageDescription.placeholder = '请继续对话...';
-    }
 
     // 获取滑块值 - 从HTML控件获取用户输入
     const brightness = parseInt(document.getElementById('brightness').value);
@@ -566,6 +560,9 @@ async function generateImagesFromUpload() {
 
     // 获取生成数量 - 从选择控件获取
     const batchCount = parseInt(imageBatchCount.value);
+    
+    // 新增：获取图片尺寸
+    const selectedImageSize = imageSize.value;
     
     try {
         // 对选中的图片索引进行排序，确保按照上传顺序处理
@@ -585,7 +582,10 @@ async function generateImagesFromUpload() {
             formData.append('saturation', saturation);          // 饱和度值
             formData.append('batch_count', batchCount);         // 生成数量
 
-            // 添加图片描述 - 修复：将用户输入的描述正确传递给后端
+            // 新增：添加图片尺寸
+            formData.append('image_size', selectedImageSize);
+
+            // 添加图片描述
             if (description) {
                 formData.append('description', description);
             }
@@ -622,6 +622,11 @@ async function generateImagesFromUpload() {
                 currentImageSessionId = data.session_id;
             }
 
+            // 添加用户输入到聊天历史
+            if (description) {
+                addImageChatMessage(description, 'user');
+            }
+
             // 显示生成结果（按生成顺序，新图片显示在前面）
             const imageUrls = data.image_urls || [data.image_url];
             imageUrls.forEach((url, index) => {
@@ -636,14 +641,25 @@ async function generateImagesFromUpload() {
             const imageCount = imageUrls.length;
             addImageChatMessage(`图片 ${selectedImage.name} 生成 ${imageCount} 张变体成功`, 'system');
 
+            // 为每张生成的图片都添加到聊天历史记录
+            imageUrls.forEach((url, index) => {
+                addImageChatMessage(`第 ${index + 1} 张图片已生成`, 'system');
+            });
+
             return data; // 返回数据以便后续处理
         });
 
         // 等待所有图片处理完成
         await Promise.all(promises);
 
+        // 清空描述输入框
+        imageDescription.value = '';
+        imageDescription.placeholder = '请继续对话...';
+
         // 刷新历史图片列表
         refreshImageHistory();
+        // 刷新图片模式聊天历史
+        refreshImageChatHistory();
     } catch (error) {
         console.error('生成错误:', error);
         alert('生成失败，请检查网络连接或稍后重试');
@@ -724,7 +740,10 @@ async function generateImagesFromText() {
 
         // 记录生成历史
         const imageCount = imageUrls.length;
-        addChatMessage(`已生成 ${imageCount} 张图片: ${textContent}`, 'system');
+        // 为每张生成的图片都添加到聊天历史
+        imageUrls.forEach((url, index) => {
+            addChatMessage(`已生成图片 ${index + 1}/${imageCount}: ${textContent}`, 'system');
+        });
 
         // 刷新历史图片列表和聊天历史
         refreshImageHistory();
@@ -790,298 +809,6 @@ function addImageChatMessage(content, sender) {
     imageChatHistory.scrollTop = imageChatHistory.scrollHeight;
 }
 
-// 简单风格测试（无需联网）
-async function simpleStyleTest() {
-    if (currentMethod === 'image') {
-        if (uploadedImages.length === 0) {
-            alert('请先上传商品图片！');
-            return;
-        }
-        
-        if (selectedImageIndices.length === 0) {
-            alert('请至少选择一张图片进行测试！');
-            return;
-        }
-        
-        // 获取滑块值
-        const brightness = parseInt(document.getElementById('brightness').value);
-        const contrast = parseInt(document.getElementById('contrast').value);
-        const saturation = parseInt(document.getElementById('saturation').value);
-        
-        // 对选中的图片索引进行排序，确保按照上传顺序处理
-        const sortedIndices = [...selectedImageIndices].sort((a, b) => a - b);
-        
-        // 对每张选中的图片进行处理
-        for (const index of sortedIndices) {
-            const selectedImage = uploadedImages[index];
-            
-            // 创建canvas进行简单处理
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                // 设置canvas尺寸
-                canvas.width = img.width;
-                canvas.height = img.height;
-                
-                // 绘制原始图片
-                ctx.drawImage(img, 0, 0);
-                
-                // 应用简单滤镜效果
-                applyFilters(ctx, canvas.width, canvas.height, brightness, contrast, saturation);
-                
-                // 转换为DataURL
-                const processedDataURL = canvas.toDataURL('image/jpeg', 0.9);
-                
-                // 显示结果
-                displayGeneratedImage(processedDataURL, `test_${selectedImage.name}`, true, true);
-            };
-            
-            img.src = selectedImage.data;
-        }
-    } else {
-        // 文本模式下的简单测试
-        const textContent = textInput.value.trim();
-        if (!textContent) {
-            alert('请输入宣传内容描述！');
-            return;
-        }
-        
-        // 对于文本模式，直接显示提示信息，因为文本模式不支持简单测试
-        alert('文本模式下的自定义调节生成图片功能暂未实现');
-    }
-}
-
-// 应用滤镜效果
-function applyFilters(ctx, width, height, brightness, contrast, saturation) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    
-    // 应用亮度
-    if (brightness !== 0) {
-        const factor = (brightness + 100) / 100;
-        for (let i = 0; i < data.length; i += 4) {
-            data[i] *= factor;     // R
-            data[i + 1] *= factor; // G
-            data[i + 2] *= factor; // B
-        }
-    }
-    
-    // 应用对比度
-    if (contrast !== 0) {
-        const factor = (contrast + 100) / 100;
-        const intercept = 128 * (1 - factor);
-        for (let i = 0; i < data.length; i += 4) {
-            data[i] = data[i] * factor + intercept;     // R
-            data[i + 1] = data[i + 1] * factor + intercept; // G
-            data[i + 2] = data[i + 2] * factor + intercept; // B
-        }
-    }
-    
-    // 应用饱和度
-    if (saturation !== 0) {
-        const factor = (saturation + 100) / 100;
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            const gray = 0.2989 * r + 0.5870 * g + 0.1140 * b;
-            
-            data[i] = gray + (r - gray) * factor;     // R
-            data[i + 1] = gray + (g - gray) * factor; // G
-            data[i + 2] = gray + (b - gray) * factor; // B
-        }
-    }
-    
-    ctx.putImageData(imageData, 0, 0);
-}
-
-// 显示生成的图片
-function displayGeneratedImage(imageUrl, originalName, isTest = false, prepend = false) {
-    // 移除空状态提示
-    const emptyResults = resultsContainer.querySelector('.empty-results');
-    if (emptyResults) {
-        emptyResults.remove();
-    }
-    
-    // 创建结果项
-    const resultItem = document.createElement('div');
-    resultItem.className = 'result-item';
-    
-    const timestamp = new Date().toLocaleTimeString();
-    const resultName = isTest ? `测试_${originalName}` : `生成_${originalName}`;
-    
-    resultItem.innerHTML = `
-        <img src="${imageUrl}" alt="${resultName}" class="result-img">
-        <button class="download-btn">
-            <i class="fas fa-download"></i> 下载
-        </button>
-        <div style="padding: 10px; font-size: 0.8rem; color: #666;">
-            <div>${resultName}</div>
-            <div>${timestamp}</div>
-        </div>
-    `;
-
-    // 为下载按钮添加事件监听器
-    const downloadBtn = resultItem.querySelector('.download-btn');
-    downloadBtn.addEventListener('click', () => {
-        downloadImage(imageUrl, resultName);
-    });
-    
-    // 添加到结果容器
-    if (prepend) {
-        // 新图片显示在前面（用于文本生成）
-        if (resultsContainer.firstChild) {
-            resultsContainer.insertBefore(resultItem, resultsContainer.firstChild);
-        } else {
-            resultsContainer.appendChild(resultItem);
-        }
-    } else {
-        // 按照生成顺序显示（用于图片上传）
-        resultsContainer.appendChild(resultItem);
-    }
-    
-    // 滚动到结果区域
-    resultItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-// 下载图片
-function downloadImage(dataUrl, filename) {
-    try {
-    const link = document.createElement('a');
-    link.href = dataUrl;
-
-        // 确保文件名有正确的扩展名
-        if (!filename.toLowerCase().endsWith('.png')) {
-            filename += '.png';
-        }
-
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-        console.log('图片下载成功:', filename);
-    } catch (error) {
-        console.error('下载图片失败:', error);
-        alert('下载失败，请稍后重试');
-    }
-}
-
-// 清空所有
-function clearAll() {
-    if (!confirm('确定要清空所有上传的图片和生成结果吗？')) {
-        return;
-    }
-    
-    uploadedImages = [];
-    selectedImageIndices = [];
-    
-    // 清空文本输入
-    textInput.value = '';
-    
-    // 清空对话历史
-    chatHistory.innerHTML = '<div class="empty-chat"><i class="fas fa-comment-slash"></i><p>暂无生成记录</p></div>';
-    
-    // 重置会话ID
-    currentSessionId = null;
-
-    // 更新文本输入框占位符
-    updateTextInputPlaceholder();
-    
-    // 更新界面
-    updatePreview();
-    resultsContainer.innerHTML = `
-        <div class="empty-results">
-            <i class="fas fa-image"></i>
-            <p>生成的宣传图将显示在这里</p>
-        </div>
-    `;
-    
-    // 重置滑块
-    document.getElementById('brightness').value = 0;
-    document.getElementById('contrast').value = 0;
-    document.getElementById('saturation').value = 0;
-    document.getElementById('brightnessValue').textContent = '0';
-    document.getElementById('contrastValue').textContent = '0';
-    document.getElementById('saturationValue').textContent = '0';
-    
-    // 重置选择
-    document.querySelectorAll('.model-card, .style-card').forEach(card => {
-        card.classList.remove('selected');
-    });
-    selectDefaultOptions();
-}
-
-// ========== 历史图片功能 ==========
-
-/**
- * 加载用户的历史图片
- * 从后端获取用户的生成记录并显示
- */
-async function loadImageHistory() {
-    if (!authToken) {
-        console.log('用户未登录，跳过加载历史图片');
-        return;
-    }
-
-    try {
-        const response = await fetch('http://localhost:5000/user/generation_records?limit=50', {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('获取历史图片失败');
-        }
-
-        const data = await response.json();
-        displayImageHistory(data.records || []);
-
-    } catch (error) {
-        console.error('加载历史图片失败:', error);
-        imageHistory.innerHTML = `
-            <div class="empty-images">
-                <i class="fas fa-exclamation-triangle"></i>
-                <p>加载历史图片失败</p>
-            </div>
-        `;
-    }
-}
-
-/**
- * 显示历史图片列表
- * @param {Array} records - 历史图片记录数组
- */
-function displayImageHistory(records) {
-    if (!records || records.length === 0) {
-        imageHistory.innerHTML = `
-            <div class="empty-images">
-                <i class="fas fa-image"></i>
-                <p>暂无历史图片</p>
-            </div>
-        `;
-        return;
-    }
-
-    // 创建图片网格
-    const grid = document.createElement('div');
-    grid.className = 'image-history-grid';
-
-    records.forEach(record => {
-        const imageItem = createImageHistoryItem(record);
-        grid.appendChild(imageItem);
-    });
-
-    imageHistory.innerHTML = '';
-    imageHistory.appendChild(grid);
-
-    console.log(`显示 ${records.length} 张历史图片`);
-}
-
 /**
  * 创建历史图片项
  * @param {Object} record - 图片记录数据
@@ -1112,6 +839,12 @@ function createImageHistoryItem(record) {
             <div class="history-image-date">${createdDate}</div>
             <div class="history-image-prompt">${shortPrompt}</div>
         </div>
+        <button class="adjust-btn" onclick="adjustHistoryImage('${record.image_url}', '${record.prompt}')">
+            <i class="fas fa-sliders-h"></i>
+        </button>
+        <button class="use-as-reference-btn" onclick="useAsReference('${record.image_url}', '${record.prompt}')">
+            <i class="fas fa-sync-alt"></i>
+        </button>
         <button class="download-btn" onclick="downloadImage('${record.image_url}', '${record.id}')">
             <i class="fas fa-download"></i>
         </button>
@@ -1122,6 +855,160 @@ function createImageHistoryItem(record) {
     img.addEventListener('click', () => viewImage(record.image_url, record.prompt));
 
     return item;
+}
+
+/**
+ * 使用历史图片作为参考图
+ * @param {string} imageUrl - 图片URL
+ * @param {string} prompt - 提示词
+ */
+function useAsReference(imageUrl, prompt) {
+    event.stopPropagation(); // 阻止事件冒泡
+
+    // 切换到图片模式
+    if (currentMethod !== 'image') {
+        switchMethod('image');
+    }
+
+    // 创建一个临时File对象并添加到上传队列
+    fetch(imageUrl)
+        .then(res => res.blob())
+        .then(blob => {
+            // 生成一个唯一的文件名
+            const fileName = `reference_${Date.now()}.png`;
+            const file = new File([blob], fileName, { type: blob.type });
+
+            // 创建一个图片对象用于预览
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // 检查图片是否已经存在于uploadedImages中
+                const existingIndex = uploadedImages.findIndex(img => img.fileUrl === imageUrl);
+                
+                if (existingIndex === -1) {
+                    // 如果不存在，则添加到uploadedImages
+                    uploadedImages.push({
+                        id: Date.now() + Math.random(),
+                        name: fileName,
+                        data: e.target.result,
+                        file: file,
+                        fileUrl: imageUrl
+                    });
+                    
+                    // 更新预览
+                    updatePreview();
+                    
+                    // 将新添加的图片设为选中状态
+                    const newIndex = uploadedImages.length - 1;
+                    if (!selectedImageIndices.includes(newIndex)) {
+                        selectedImageIndices.push(newIndex);
+                    }
+                    updatePreview();
+                    
+                    console.log('图片已添加为参考图:', fileName);
+                    
+                    // 添加提示词到图片描述框
+                    if (prompt && imageDescription.value.trim() === '') {
+                        imageDescription.value = prompt;
+                    }
+                } else {
+                    // 如果已存在，只是选中它
+                    if (!selectedImageIndices.includes(existingIndex)) {
+                        selectedImageIndices.push(existingIndex);
+                    }
+                    updatePreview();
+                    console.log('图片已选中为参考图:', uploadedImages[existingIndex].name);
+                }
+            };
+            reader.readAsDataURL(file);
+        })
+        .catch(error => {
+            console.error('使用参考图失败:', error);
+            alert('使用参考图失败，请稍后重试');
+        });
+}
+
+/**
+ * 调节历史图片
+ * @param {string} imageUrl - 图片URL
+ * @param {string} prompt - 提示词
+ */
+function adjustHistoryImage(imageUrl, prompt) {
+    event.stopPropagation(); // 阻止事件冒泡
+
+    // 获取当前的调节参数
+    const brightness = parseInt(document.getElementById('brightness').value);
+    const contrast = parseInt(document.getElementById('contrast').value);
+    const saturation = parseInt(document.getElementById('saturation').value);
+
+    // 创建一个临时的canvas来处理图片
+    const img = new Image();
+    img.crossOrigin = "Anonymous"; // 处理跨域图片
+    img.onload = function() {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 设置canvas尺寸为图片原始尺寸
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        // 绘制原始图片
+        ctx.drawImage(img, 0, 0);
+        
+        // 应用滤镜效果
+        applyFilters(ctx, canvas.width, canvas.height, brightness, contrast, saturation);
+        
+        // 转换为DataURL
+        const adjustedDataURL = canvas.toDataURL('image/jpeg', 0.9);
+        
+        // 显示调节后的图片并添加到历史记录
+        displayGeneratedImage(adjustedDataURL, `adjusted_${Date.now()}`, true, true);
+        
+        // 添加到历史图片记录
+        addToHistoryRecord(adjustedDataURL, `调节原始图片 - 亮度: ${brightness}, 对比度: ${contrast}, 饱和度: ${saturation}`);
+        
+        console.log('历史图片调节完成');
+    };
+    
+    img.onerror = function() {
+        // 如果跨域失败，尝试通过后端代理获取图片
+        console.log('图片跨域，尝试通过后端处理');
+        
+        // 创建FormData对象
+        const formData = new FormData();
+        formData.append('image', imageUrl); // 直接传递URL可能不工作，需要获取blob
+        formData.append('brightness', brightness);
+        formData.append('contrast', contrast);
+        formData.append('saturation', saturation);
+        
+        // 发送请求到后端进行处理
+        fetch('http://localhost:5000/simple_adjust', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 显示调节后的图片并添加到历史记录
+                displayGeneratedImage(data.image_url, `adjusted_${Date.now()}`, true, true);
+                
+                // 添加到历史图片记录
+                addToHistoryRecord(data.image_url, `调节原始图片 - 亮度: ${brightness}, 对比度: ${contrast}, 饱和度: ${saturation}`);
+                
+                console.log('历史图片调节完成');
+            } else {
+                alert('图片调节失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('调节历史图片时出错:', error);
+            alert('调节历史图片失败，请稍后重试');
+        });
+    };
+    
+    img.src = imageUrl;
 }
 
 /**
@@ -1374,4 +1261,356 @@ function refreshImageChatHistory() {
     if (authToken) {
         loadImageChatHistory(); // 修复：应该是loadImageChatHistory
     }
+}
+
+/**
+ * 应用滤镜效果
+ * @param {CanvasRenderingContext2D} ctx - Canvas 2D 上下文
+ * @param {number} width - 图片宽度
+ * @param {number} height - 图片高度
+ * @param {number} brightness - 亮度值
+ * @param {number} contrast - 对比度值
+ * @param {number} saturation - 饱和度值
+ */
+function applyFilters(ctx, width, height, brightness, contrast, saturation) {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+    
+    // 应用亮度
+    if (brightness !== 0) {
+        const factor = (brightness + 100) / 100;
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = Math.min(255, Math.max(0, data[i] * factor));     // R
+            data[i + 1] = Math.min(255, Math.max(0, data[i + 1] * factor)); // G
+            data[i + 2] = Math.min(255, Math.max(0, data[i + 2] * factor)); // B
+        }
+    }
+    
+    // 应用对比度
+    if (contrast !== 0) {
+        const factor = (contrast + 100) / 100;
+        const intercept = 128 * (1 - factor);
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = Math.min(255, Math.max(0, data[i] * factor + intercept));     // R
+            data[i + 1] = Math.min(255, Math.max(0, data[i + 1] * factor + intercept)); // G
+            data[i + 2] = Math.min(255, Math.max(0, data[i + 2] * factor + intercept)); // B
+        }
+    }
+    
+    // 应用饱和度
+    if (saturation !== 0) {
+        const factor = (saturation + 100) / 100;
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const gray = 0.2989 * r + 0.5870 * g + 0.1140 * b;
+            
+            data[i] = Math.min(255, Math.max(0, gray + (r - gray) * factor));     // R
+            data[i + 1] = Math.min(255, Math.max(0, gray + (g - gray) * factor)); // G
+            data[i + 2] = Math.min(255, Math.max(0, gray + (b - gray) * factor)); // B
+        }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+}
+
+// 显示生成的图片
+function displayGeneratedImage(imageUrl, originalName, isTest = false, prepend = false) {
+    // 移除空状态提示
+    const emptyResults = resultsContainer.querySelector('.empty-results');
+    if (emptyResults) {
+        emptyResults.remove();
+    }
+    
+    // 创建结果项
+    const resultItem = document.createElement('div');
+    resultItem.className = 'result-item';
+    
+    const timestamp = new Date().toLocaleTimeString();
+    const resultName = isTest ? `测试_${originalName}` : `生成_${originalName}`;
+    
+    resultItem.innerHTML = `
+        <img src="${imageUrl}" alt="${resultName}" class="result-img">
+        <button class="download-btn">
+            <i class="fas fa-download"></i> 下载
+        </button>
+        <div style="padding: 10px; font-size: 0.8rem; color: #666;">
+            <div>${resultName}</div>
+            <div>${timestamp}</div>
+        </div>
+    `;
+
+    // 为下载按钮添加事件监听器
+    const downloadBtn = resultItem.querySelector('.download-btn');
+    downloadBtn.addEventListener('click', () => {
+        downloadImage(imageUrl, resultName);
+    });
+    
+    // 添加到结果容器
+    if (prepend) {
+        // 新图片显示在前面（用于文本生成）
+        if (resultsContainer.firstChild) {
+            resultsContainer.insertBefore(resultItem, resultsContainer.firstChild);
+        } else {
+            resultsContainer.appendChild(resultItem);
+        }
+    } else {
+        // 按照生成顺序显示（用于图片上传）
+        resultsContainer.appendChild(resultItem);
+    }
+    
+    // 滚动到结果区域
+    resultItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// 下载图片
+function downloadImage(dataUrl, filename) {
+    try {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+
+        // 确保文件名有正确的扩展名
+        if (!filename.toLowerCase().endsWith('.png')) {
+            filename += '.png';
+        }
+
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+        console.log('图片下载成功:', filename);
+    } catch (error) {
+        console.error('下载图片失败:', error);
+        alert('下载失败，请稍后重试');
+    }
+}
+
+// 清空所有
+function clearAll() {
+    if (!confirm('确定要清空对话历史和生成结果吗？')) {
+        return;
+    }
+    
+    // 不再清空上传的图片，只清空对话历史和生成结果
+    // uploadedImages = [];  // 注释掉：不清空参考图片
+    // selectedImageIndices = [];  // 注释掉：不清空参考图片的选中状态
+    
+    // 清空文本输入
+    textInput.value = '';
+    
+    // 清空对话历史
+    chatHistory.innerHTML = '<div class="empty-chat"><i class="fas fa-comment-slash"></i><p>暂无生成记录</p></div>';
+    
+    // 清空图片模式对话历史
+    imageChatHistory.innerHTML = '<div class="empty-chat"><i class="fas fa-comment-slash"></i><p>暂无图片生成对话记录</p></div>';
+    
+    // 重置会话ID
+    currentSessionId = null;
+    currentImageSessionId = null;
+
+    // 更新文本输入框占位符
+    updateTextInputPlaceholder();
+    
+    // 清空生成结果
+    resultsContainer.innerHTML = `
+        <div class="empty-results">
+            <i class="fas fa-image"></i>
+            <p>生成的宣传图将显示在这里</p>
+        </div>
+    `;
+    
+    // 重置滑块
+    document.getElementById('brightness').value = 0;
+    document.getElementById('contrast').value = 0;
+    document.getElementById('saturation').value = 0;
+    document.getElementById('brightnessValue').textContent = '0';
+    document.getElementById('contrastValue').textContent = '0';
+    document.getElementById('saturationValue').textContent = '0';
+    
+    // 重置选择
+    document.querySelectorAll('.model-card, .style-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+    selectDefaultOptions();
+}
+
+// ========== 历史图片功能 ==========
+
+/**
+ * 加载用户的历史图片
+ * 从后端获取用户的生成记录并显示
+ */
+async function loadImageHistory() {
+    if (!authToken) {
+        console.log('用户未登录，跳过加载历史图片');
+        return;
+    }
+
+    try {
+        const response = await fetch('http://localhost:5000/user/generation_records?limit=50', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('获取历史图片失败');
+        }
+
+        const data = await response.json();
+        displayImageHistory(data.records || []);
+
+    } catch (error) {
+        console.error('加载历史图片失败:', error);
+        imageHistory.innerHTML = `
+            <div class="empty-images">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>加载历史图片失败</p>
+            </div>
+        `;
+    }
+}
+
+/**
+ * 显示历史图片列表
+ * @param {Array} records - 历史图片记录数组
+ */
+function displayImageHistory(records) {
+    if (!records || records.length === 0) {
+        imageHistory.innerHTML = `
+            <div class="empty-images">
+                <i class="fas fa-image"></i>
+                <p>暂无历史图片</p>
+            </div>
+        `;
+        return;
+    }
+
+    // 创建图片网格
+    const grid = document.createElement('div');
+    grid.className = 'image-history-grid';
+
+    records.forEach(record => {
+        const imageItem = createImageHistoryItem(record);
+        grid.appendChild(imageItem);
+    });
+
+    imageHistory.innerHTML = '';
+    imageHistory.appendChild(grid);
+
+    console.log(`显示 ${records.length} 张历史图片`);
+}
+
+/**
+ * 简单风格测试（现在仅适用于文本模式）
+ * 之前的功能改为专门处理历史图片
+ */
+async function simpleStyleTest() {
+    if (currentMethod === 'image') {
+        if (uploadedImages.length === 0) {
+            alert('请先上传商品图片！');
+            return;
+        }
+        
+        if (selectedImageIndices.length === 0) {
+            alert('请至少选择一张图片进行测试！');
+            return;
+        }
+        
+        // 获取滑块值
+        const brightness = parseInt(document.getElementById('brightness').value);
+        const contrast = parseInt(document.getElementById('contrast').value);
+        const saturation = parseInt(document.getElementById('saturation').value);
+        
+        // 对选中的图片索引进行排序，确保按照上传顺序处理
+        const sortedIndices = [...selectedImageIndices].sort((a, b) => a - b);
+        
+        // 对每张选中的图片进行处理
+        for (const index of sortedIndices) {
+            const selectedImage = uploadedImages[index];
+            
+            // 创建canvas进行简单处理
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // 设置canvas尺寸
+                canvas.width = img.width;
+                canvas.height = img.height;
+                
+                // 绘制原始图片
+                ctx.drawImage(img, 0, 0);
+                
+                // 应用简单滤镜效果
+                applyFilters(ctx, canvas.width, canvas.height, brightness, contrast, saturation);
+                
+                // 转换为DataURL
+                const processedDataURL = canvas.toDataURL('image/jpeg', 0.9);
+                
+                // 显示结果并添加到历史记录
+                displayGeneratedImage(processedDataURL, `test_${selectedImage.name}`, true, true);
+                
+                // 添加到历史图片记录
+                addToHistoryRecord(processedDataURL, `简单调节测试 - 亮度: ${brightness}, 对比度: ${contrast}, 饱和度: ${saturation}`);
+            };
+            
+            img.src = selectedImage.data;
+        }
+    } else {
+        // 文本模式下的简单测试
+        const textContent = textInput.value.trim();
+        if (!textContent) {
+            alert('请输入宣传内容描述！');
+            return;
+        }
+        
+        // 对于文本模式，直接显示提示信息，因为文本模式不支持简单测试
+        alert('文本模式下的自定义调节生成图片功能暂未实现');
+    }
+}
+
+/**
+ * 添加到历史记录
+ * @param {string} imageUrl - 图片URL
+ * @param {string} prompt - 提示词
+ */
+function addToHistoryRecord(imageUrl, prompt) {
+    if (!authToken) {
+        console.log('用户未登录，无法添加到历史记录');
+        return;
+    }
+    
+    // 创建一个虚拟的记录对象
+    const record = {
+        id: `temp_${Date.now()}`,
+        image_url: imageUrl,
+        prompt: prompt,
+        created_at: new Date().toISOString()
+    };
+    
+    // 创建历史图片项
+    const imageItem = createImageHistoryItem(record);
+    
+    // 获取网格容器
+    let grid = document.querySelector('.image-history-grid');
+    if (!grid) {
+        // 如果没有网格容器，创建一个
+        grid = document.createElement('div');
+        grid.className = 'image-history-grid';
+        imageHistory.innerHTML = '';
+        imageHistory.appendChild(grid);
+    }
+    
+    // 将新项目插入到网格的开头
+    if (grid.firstChild) {
+        grid.insertBefore(imageItem, grid.firstChild);
+    } else {
+        grid.appendChild(imageItem);
+    }
+    
+    console.log('已添加调节后的图片到历史记录');
 }

@@ -261,27 +261,51 @@ def generate_image():
             batch_count = 1
         batch_count = max(1, min(4, batch_count))  # 限制在1-4之间
         
+        # 新增：获取图片尺寸，设置默认值
+        image_size = request.form.get('image_size', '1024*1024')
+        
+        # 验证图片尺寸是否合法
+        valid_sizes = ['1024*1024', '720*1280', '768*1152', '1280*720']
+        if image_size not in valid_sizes:
+            image_size = '1024*1024'  # 默认值
+        
         # 生成提示词 - 优先使用用户描述
         prompt = generate_prompt(model, style, brightness, contrast, saturation, description)
         print(f"生成的提示词: {prompt}")
         
-        # 记录聊天历史 - 使用图片模式聊天历史
+        # 打印调试信息 - 显示用户选择的模型、风格和描述
+        print(f"\n{'='*60}")
+        print(f"🎯 图片生成请求详情:")
+        print(f"📁 上传文件: {file.filename}")
+        print(f"🤖 AI模型: {model}")
+        print(f"🎨 生成风格: {style}")
+        print(f"📝 图片描述: {description}")
+        print(f"💡 亮度调整: {brightness}")
+        print(f"📊 对比度调整: {contrast}")
+        print(f" saturation: {saturation}")
+        print(f"✨ 最终提示词: {prompt}")
+        print(f"{'='*60}\n")
+        
+        # 管理聊天历史 - 使用图片模式聊天历史
         if session_id not in image_chat_history:
             image_chat_history[session_id] = []
-        image_chat_history[session_id].append({
-            'timestamp': datetime.now().isoformat(),
-            'type': 'request',
-            'model': model,
-            'style': style,
-            'description': description,
-            'prompt': prompt,
-            'image_uploaded': True,
-            'generation_type': 'image'  # 标记为图片生成
-        })
+        
+        # 构建完整的提示词，包含历史对话上下文
+        full_prompt = build_contextual_prompt(description if description else f"生成 {model} 风格的 {style} 图片", image_chat_history[session_id])
+        
+        # 记录用户消息 - 保存原始的 prompt 字段
+        user_message = {
+            'role': 'user',
+            'content': description if description else f"生成 {model} 风格的 {style} 图片",
+            'prompt': full_prompt,  # 保存为 prompt
+            'time': datetime.now().isoformat()[:19],
+            'field_used': 'description'  # 记录使用的字段
+        }
+        image_chat_history[session_id].append(user_message)
         
         # 保存聊天记录到数据库（如果用户已登录）
         if user_id:
-            history_db.save_image_chat_message(user_id, session_id, 'user', f"图片生成请求: {prompt}")
+            history_db.save_image_chat_message(user_id, session_id, 'user', f"图片生成请求: {description if description else f'生成 {model} 风格的 {style} 图片'}")
         
         # 生成唯一文件名，防止重名
         filename = f"{uuid.uuid4().hex}_{file.filename}"
@@ -292,12 +316,12 @@ def generate_image():
         print(f"\n{'='*60}")
         print(f"🚀 开始AI图片生成")
         print(f"📁 上传文件: {filename}")
-        print(f"📝 提示词长度: {len(prompt)} 字符")
-        print(f"📝 提示词预览: {prompt[:100]}...")
+        print(f"📝 提示词长度: {len(full_prompt)} 字符")
+        print(f"📝 提示词预览: {full_prompt[:100]}...")
         print(f"{'='*60}\n")
         
         # 尝试使用AI大模型生成图片，传递上传的图片路径、描述和生成数量
-        success, result = try_ai_generation(prompt, upload_path, description, batch_count)
+        success, result = try_ai_generation(full_prompt, upload_path, description, batch_count, image_size)
         
         # 调试信息：AI生成结果
         print(f"\n{'='*60}")
@@ -361,7 +385,7 @@ def generate_image():
                 'filename': f"ai_generated_{uuid.uuid4().hex}.png",
                 'model': model,
                 'style': style,
-                'prompt': prompt,
+                'prompt': full_prompt,
                 'session_id': session_id,  # 返回会话ID
                 'batch_count': len(image_urls),  # 返回实际生成的图片数量
                 'generated_by': 'aliyun_ai'  # 新增：标记生成来源
@@ -372,19 +396,21 @@ def generate_image():
             print(f"📦 image_url前80字符: {image_url[:80]}...")
             
             # 记录响应到历史（只存部分image_url，避免日志过大）
-            image_chat_history[session_id].append({
-                'timestamp': datetime.now().isoformat(),
-                'type': 'response',
-                'success': True,
-                'image_url': image_url[:100] + "...",  # 只存前100字符
-                'generated_by': 'aliyun_ai',  # 新增：记录生成来源
-                'generation_type': 'image'  # 标记为图片生成
-            })
+            assistant_message = {
+                'role': 'assistant',
+                'content': 'image_generated',
+                'image_url': image_url,
+                'prompt': full_prompt,  # 保存使用的提示词
+                'time': datetime.now().isoformat()[:19]
+            }
+            image_chat_history[session_id].append(assistant_message)
             
             # 保存生成记录到数据库（如果用户已登录）
             if user_id:
-                history_db.save_generation_record(user_id, response_data['image_url'], prompt, model, style, 'image')
-                history_db.save_image_chat_message(user_id, session_id, 'system', f"AI图片生成成功: {prompt[:50]}...")
+                # 修复：对于批量生成的图片，应该为每张图片都保存一条记录
+                for img_url in image_urls:
+                    history_db.save_generation_record(user_id, img_url, full_prompt, model, style, 'image')
+                history_db.save_image_chat_message(user_id, session_id, 'system', f"AI图片生成成功: {full_prompt[:50]}... 共{len(image_urls)}张")
             
             return jsonify(response_data)
         else:
@@ -438,7 +464,7 @@ def generate_image():
                     'filename': output_filename,
                     'model': model,
                     'style': style,
-                    'prompt': prompt,
+                    'prompt': full_prompt,
                     'session_id': session_id,  # 返回会话ID
                     'generated_by': 'local'  # 新增：标记为本地生成
                 }
@@ -448,19 +474,19 @@ def generate_image():
                 print(f"📦 image_url长度: {len(response_data['image_url'])}")
                 
                 # 记录响应到历史
-                image_chat_history[session_id].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'type': 'response',
-                    'success': True,
-                    'image_url': response_data['image_url'][:100] + "...",
-                    'generated_by': 'local',  # 新增：记录生成来源
-                    'generation_type': 'image'  # 标记为图片生成
-                })
+                assistant_message = {
+                    'role': 'assistant',
+                    'content': 'image_generated',
+                    'image_url': response_data['image_url'],
+                    'prompt': full_prompt,  # 保存使用的提示词
+                    'time': datetime.now().isoformat()[:19]
+                }
+                image_chat_history[session_id].append(assistant_message)
                 
                 # 保存生成记录到数据库（如果用户已登录）
                 if user_id:
-                    history_db.save_generation_record(user_id, response_data['image_url'], prompt, model, style, 'image')
-                    history_db.save_image_chat_message(user_id, session_id, 'system', f"本地处理生成成功: {prompt[:50]}...")
+                    history_db.save_generation_record(user_id, response_data['image_url'], full_prompt, model, style, 'image')
+                    history_db.save_image_chat_message(user_id, session_id, 'system', f"本地处理生成成功: {full_prompt[:50]}...")
                 
                 return jsonify(response_data)
                 
@@ -690,7 +716,9 @@ def generate_from_text():
         
         # 保存生成记录到数据库（如果用户已登录）
         if user_id:
-            history_db.save_generation_record(user_id, image_url, text)
+            # 修复：对于批量生成的图片，应该为每张图片都保存一条记录
+            for img_url in image_urls:
+                history_db.save_generation_record(user_id, img_url, text, generation_type='text')
             history_db.save_chat_message(user_id, session_id, 'system', f"文本生成图片成功: {text}")
         
         print(f"生成成功，历史长度: {len(chat_history[session_id])}")
@@ -726,7 +754,7 @@ def build_contextual_prompt(current_prompt, session_history):
         return current_prompt
     
     # 只获取最近的几次对话，避免提示词过长
-    recent_history = session_history[-10:]  # 获取最近4条消息
+    recent_history = session_history[-4:]  # 获取最近4条消息
     
     context_parts = ["基于以下对话历史生成图片:"]
     
@@ -1115,6 +1143,75 @@ def index():
             'generation_records': '/user/generation_records'
         }
     }
+
+# 新增：历史图片调节路由
+@app.route('/simple_adjust', methods=['POST'])
+def simple_adjust():
+    """简单调节历史图片"""
+    try:
+        # 检查认证令牌
+        token = request.headers.get('Authorization')
+        user_id = None
+        if token and token.startswith('Bearer '):
+            token = token[7:]
+            user_info = auth_service.verify_token(token)
+            if user_info:
+                user_id = user_info['user_id']
+        
+        # 获取参数
+        image_url = request.form.get('image')
+        brightness = int(request.form.get('brightness', 0))
+        contrast = int(request.form.get('contrast', 0))
+        saturation = int(request.form.get('saturation', 0))
+        
+        # 限制参数范围
+        brightness = max(-50, min(50, brightness))
+        contrast = max(-50, min(50, contrast))
+        saturation = max(-50, min(50, saturation))
+        
+        # 从URL下载图片
+        response = requests.get(image_url)
+        if response.status_code != 200:
+            return jsonify({'success': False, 'error': '无法下载图片'}), 400
+        
+        # 打开图片
+        img = Image.open(io.BytesIO(response.content))
+        
+        # 转换为RGB模式（如果是RGBA）
+        if img.mode in ('RGBA', 'LA'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'RGBA':
+                background.paste(img, mask=img.split()[3])
+            else:
+                background.paste(img, mask=img.split()[1])
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # 应用效果
+        processed_img = apply_image_effects(
+            img, 'creative', 'banner', 
+            brightness, contrast, saturation
+        )
+        
+        # 转换为base64
+        img_byte_arr = io.BytesIO()
+        processed_img.save(img_byte_arr, format='JPEG', quality=90)
+        img_byte_arr.seek(0)
+        img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+        data_url = f"data:image/jpeg;base64,{img_base64}"
+        
+        response_data = {
+            'success': True,
+            'image_url': data_url,
+            'is_adjusted': True
+        }
+        
+        return jsonify(response_data)
+    
+    except Exception as e:
+        print(f"简单调节错误: {str(e)}")
+        return jsonify({'success': False, 'error': f'处理失败: {str(e)}'}), 500
 
 if __name__ == '__main__':
     print("=" * 60)

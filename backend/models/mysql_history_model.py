@@ -3,20 +3,221 @@ MySQL历史记录模型模块
 提供基于MySQL的用户生成记录和聊天历史的数据库操作
 """
 
-from models.database import db_connection
+import sys
+import os
+
+# 获取项目根目录
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 将项目根目录添加到 sys.path
+sys.path.append(root_dir)
+
+# 修改这一行 - 直接从根目录导入config而不是backend.config
+from config import MYSQL_CONFIG
+# 修改这一行 - 使用相对路径导入DatabaseConnection
+from models.database import DatabaseConnection
 import logging
+import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class MySQLHistoryDB:
-    """MySQL历史记录数据库操作类"""
-
+    """MySQL历史数据存储类"""
+    
     def __init__(self):
-        """
-        初始化数据库连接
-        使用全局数据库连接实例
-        """
-        self.db = db_connection
+        """初始化历史数据数据库连接"""
+        self.db = DatabaseConnection()
+        self._create_tables_if_not_exists()
+    
+    def _create_tables_if_not_exists(self):
+        """创建历史数据表（如果不存在）"""
+        try:
+            # 创建每日统计表
+            daily_stats_table_sql = """
+            CREATE TABLE IF NOT EXISTS daily_statistics (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                total_users INT DEFAULT 0,
+                total_generations INT DEFAULT 0,
+                today_generations INT DEFAULT 0,
+                most_popular_model VARCHAR(255),
+                created_at DATETIME NOT NULL,
+                INDEX idx_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            
+            # 创建每周统计表
+            weekly_stats_table_sql = """
+            CREATE TABLE IF NOT EXISTS weekly_statistics (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                weekly_trends JSON,
+                model_stats JSON,
+                user_ranking JSON,
+                created_at DATETIME NOT NULL,
+                INDEX idx_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            
+            # 创建趋势统计表
+            trend_stats_table_sql = """
+            CREATE TABLE IF NOT EXISTS trend_statistics (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                date DATE NOT NULL,
+                generation_count INT DEFAULT 0,
+                user_growth INT DEFAULT 0,
+                active_users INT DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                UNIQUE KEY uk_date (date),
+                INDEX idx_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            
+            self.db.execute_query(daily_stats_table_sql, fetch=False)
+            self.db.execute_query(weekly_stats_table_sql, fetch=False)
+            self.db.execute_query(trend_stats_table_sql, fetch=False)
+            
+            logger.info("历史数据表创建成功")
+        except Exception as e:
+            logger.error(f"创建历史数据表时出错: {str(e)}")
+    
+    def save_daily_statistics(self, stats_data):
+        """保存每日统计数据"""
+        try:
+            sql = """
+            INSERT INTO daily_statistics 
+            (total_users, total_generations, today_generations, most_popular_model, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            self.db.execute_query(sql, (
+                stats_data.get('total_users', 0),
+                stats_data.get('total_generations', 0),
+                stats_data.get('today_generations', 0),
+                stats_data.get('most_popular_model', ''),
+                stats_data.get('created_at')
+            ), fetch=False)
+            
+            logger.info("每日统计数据保存成功")
+        except Exception as e:
+            logger.error(f"保存每日统计数据时出错: {str(e)}")
+    
+    def save_weekly_statistics(self, weekly_data):
+        """保存每周统计数据"""
+        try:
+            sql = """
+            INSERT INTO weekly_statistics 
+            (weekly_trends, model_stats, user_ranking, created_at)
+            VALUES (%s, %s, %s, %s)
+            """
+            self.db.execute_query(sql, (
+                json.dumps(weekly_data.get('weekly_trends', []), ensure_ascii=False),
+                json.dumps(weekly_data.get('model_stats', []), ensure_ascii=False),
+                json.dumps(weekly_data.get('user_ranking', []), ensure_ascii=False),
+                weekly_data.get('created_at')
+            ), fetch=False)
+            
+            logger.info("每周统计数据保存成功")
+        except Exception as e:
+            logger.error(f"保存每周统计数据时出错: {str(e)}")
+    
+    def save_trend_statistics(self, date, generation_count=0, user_growth=0, active_users=0):
+        """保存趋势统计数据"""
+        try:
+            sql = """
+            INSERT INTO trend_statistics 
+            (date, generation_count, user_growth, active_users, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            generation_count = VALUES(generation_count),
+            user_growth = VALUES(user_growth),
+            active_users = VALUES(active_users),
+            created_at = VALUES(created_at)
+            """
+            self.db.execute_query(sql, (
+                date,
+                generation_count,
+                user_growth,
+                active_users,
+                datetime.now()
+            ), fetch=False)
+            
+            logger.info(f"趋势统计数据保存成功: {date}")
+        except Exception as e:
+            logger.error(f"保存趋势统计数据时出错: {str(e)}")
+    
+    def get_daily_statistics(self, days=30):
+        """获取每日统计数据"""
+        try:
+            sql = """
+            SELECT * FROM daily_statistics
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+            ORDER BY created_at DESC
+            """
+            results = self.db.execute_query(sql, (days,))
+            
+            formatted_results = []
+            for row in results:
+                formatted_results.append({
+                    'id': row['id'],
+                    'total_users': row['total_users'],
+                    'total_generations': row['total_generations'],
+                    'today_generations': row['today_generations'],
+                    'most_popular_model': row['most_popular_model'],
+                    'created_at': row['created_at']
+                })
+            
+            return formatted_results
+        except Exception as e:
+            logger.error(f"获取每日统计数据时出错: {str(e)}")
+            return []
+    
+    def get_weekly_statistics(self, weeks=10):
+        """获取每周统计数据"""
+        try:
+            sql = """
+            SELECT * FROM weekly_statistics
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s WEEK)
+            ORDER BY created_at DESC
+            """
+            results = self.db.execute_query(sql, (weeks,))
+            
+            formatted_results = []
+            for row in results:
+                formatted_results.append({
+                    'id': row['id'],
+                    'weekly_trends': json.loads(row['weekly_trends']) if row['weekly_trends'] else [],
+                    'model_stats': json.loads(row['model_stats']) if row['model_stats'] else [],
+                    'user_ranking': json.loads(row['user_ranking']) if row['user_ranking'] else [],
+                    'created_at': row['created_at']
+                })
+            
+            return formatted_results
+        except Exception as e:
+            logger.error(f"获取每周统计数据时出错: {str(e)}")
+            return []
+    
+    def get_trend_statistics(self, days=90):
+        """获取趋势统计数据"""
+        try:
+            sql = """
+            SELECT * FROM trend_statistics
+            WHERE date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+            ORDER BY date DESC
+            """
+            results = self.db.execute_query(sql, (days,))
+            
+            formatted_results = []
+            for row in results:
+                formatted_results.append({
+                    'date': row['date'].strftime('%Y-%m-%d'),
+                    'generation_count': row['generation_count'],
+                    'user_growth': row['user_growth'],
+                    'active_users': row['active_users'],
+                    'created_at': row['created_at']
+                })
+            
+            return formatted_results
+        except Exception as e:
+            logger.error(f"获取趋势统计数据时出错: {str(e)}")
+            return []
 
     def save_generation_record(self, user_id, image_url, prompt=None, model=None, style=None, generation_type='image'):   # finished
         """

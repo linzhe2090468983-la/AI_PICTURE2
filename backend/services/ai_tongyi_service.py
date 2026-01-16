@@ -20,7 +20,7 @@ load_dotenv()
 DASHSCOPE_API_KEY = os.getenv('DASHSCOPE_API_KEY')
 API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis'
 
-def try_ai_generation(prompt: str, image_path: str = None, description: str = "", n: int = 1) -> Tuple[bool, Optional[str]]:
+def try_ai_generation(prompt: str, image_path: str = None, description: str = "", n: int = 1, size: str = "1024*1024") -> Tuple[bool, Optional[str]]:
     """
     尝试使用阿里云通义万相AI生成图片
     接口与原有 try_ai_generation 完全一致
@@ -29,6 +29,8 @@ def try_ai_generation(prompt: str, image_path: str = None, description: str = ""
         prompt: AI生成提示词
         image_path: 参考图片路径（可选）
         description: 用户描述（可选）
+        n: 生成数量
+        size: 图片尺寸，默认为1024*1024
         
     Returns:
         tuple: (success, result) - success为True时result是base64图片，为False时result是None
@@ -50,7 +52,7 @@ def try_ai_generation(prompt: str, image_path: str = None, description: str = ""
                 'prompt': prompt,
             },
             'parameters': {
-                'size': '1024*1024',
+                'size': size,  # 使用传入的尺寸参数
                 'style': '<auto>',
                 'n': n,  # 使用传入的生成数量参数
                 'seed': int(time.time() % 100000),

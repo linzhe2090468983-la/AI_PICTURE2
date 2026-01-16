@@ -825,6 +825,66 @@ h2 i {
     overflow: hidden;
 }
 
+/* 新增：历史图片项中的参考按钮 */
+.use-as-reference-btn {
+    position: absolute;
+    top: 5px;
+    right: 35px; /* 位于下载按钮左侧 */
+    background: rgba(255, 165, 0, 0.9); /* 橙色背景表示操作功能 */
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.3s ease;
+    font-size: 0.7rem;
+    z-index: 10; /* 确保按钮在顶层 */
+}
+
+.history-image-item:hover .use-as-reference-btn {
+    opacity: 1;
+}
+
+.use-as-reference-btn:hover {
+    background: rgba(255, 165, 0, 1);
+    transform: scale(1.1);
+}
+
+/* 新增：历史图片项中的调节按钮 */
+.adjust-btn {
+    position: absolute;
+    top: 5px;
+    right: 65px; /* 位于参考按钮左侧 */
+    background: rgba(123, 104, 238, 0.9); /* 紫色背景表示调节功能 */
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.3s ease;
+    font-size: 0.7rem;
+    z-index: 10; /* 确保按钮在顶层 */
+}
+
+.history-image-item:hover .adjust-btn {
+    opacity: 1;
+}
+
+.adjust-btn:hover {
+    background: rgba(123, 104, 238, 1);
+    transform: scale(1.1);
+}
+
 /* 下载按钮 */
 .download-btn {
     position: absolute;

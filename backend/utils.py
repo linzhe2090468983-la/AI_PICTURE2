@@ -80,8 +80,8 @@ def validate_api_configs():
     else:
         print("✓ 即梦: API密钥配置完整")
 
-def generate_prompt(model, style, brightness, contrast, saturation):
-    """根据模型和风格生成提示词
+def generate_prompt(model, style, brightness, contrast, saturation, description=""):
+    """根据模型和风格生成提示词，如果提供了用户描述，则优先使用用户描述
     
     Args:
         model (str): 选择的AI模型
@@ -89,6 +89,7 @@ def generate_prompt(model, style, brightness, contrast, saturation):
         brightness (int): 亮度调整值
         contrast (int): 对比度调整值
         saturation (int): 饱和度调整值
+        description (str): 用户输入的商品及效果图描述
         
     Returns:
         str: 生成的提示词
@@ -108,33 +109,67 @@ def generate_prompt(model, style, brightness, contrast, saturation):
         'promotion': '促销海报，吸引眼球'
     }
     
-    # 根据亮度、对比度、饱和度调整描述
-    adjustment_descriptions = []
-    if brightness > 10:
-        adjustment_descriptions.append('明亮')
-    elif brightness < -10:
-        adjustment_descriptions.append('暗调')
+    # 如果用户提供了描述，优先使用用户描述并结合模型和风格信息
+    if description.strip():
+        # 根据亮度、对比度、饱和度调整描述
+        adjustment_descriptions = []
+        if brightness > 10:
+            adjustment_descriptions.append('明亮')
+        elif brightness < -10:
+            adjustment_descriptions.append('暗调')
+        
+        if contrast > 10:
+            adjustment_descriptions.append('高对比度')
+        elif contrast < -10:
+            adjustment_descriptions.append('低对比度')
+        
+        if saturation > 10:
+            adjustment_descriptions.append('高饱和度')
+        elif saturation < -10:
+            adjustment_descriptions.append('低饱和度')
+        
+        # 组合用户描述与模型风格信息
+        prompt_parts = [
+            description,
+            model_descriptions.get(model, '电商宣传图'),
+            style_descriptions.get(style, ''),
+            '高质量',
+            '专业设计',
+            *adjustment_descriptions
+        ]
+        
+        # 过滤空字符串并用逗号连接
+        return ', '.join(filter(None, prompt_parts))
     
-    if contrast > 10:
-        adjustment_descriptions.append('高对比度')
-    elif contrast < -10:
-        adjustment_descriptions.append('低对比度')
-    
-    if saturation > 10:
-        adjustment_descriptions.append('高饱和度')
-    elif saturation < -10:
-        adjustment_descriptions.append('低饱和度')
-    
-    # 组合提示词
-    prompt_parts = [
-        model_descriptions.get(model, '电商宣传图'),
-        style_descriptions.get(style, '设计图'),
-        '高质量',
-        '专业设计',
-        *adjustment_descriptions
-    ]
-    
-    return ', '.join(prompt_parts)
+    # 如果没有用户描述，则使用默认的提示词生成逻辑
+    else:
+        # 根据亮度、对比度、饱和度调整描述
+        adjustment_descriptions = []
+        if brightness > 10:
+            adjustment_descriptions.append('明亮')
+        elif brightness < -10:
+            adjustment_descriptions.append('暗调')
+        
+        if contrast > 10:
+            adjustment_descriptions.append('高对比度')
+        elif contrast < -10:
+            adjustment_descriptions.append('低对比度')
+        
+        if saturation > 10:
+            adjustment_descriptions.append('高饱和度')
+        elif saturation < -10:
+            adjustment_descriptions.append('低饱和度')
+        
+        # 组合提示词
+        prompt_parts = [
+            model_descriptions.get(model, '电商宣传图'),
+            style_descriptions.get(style, '设计图'),
+            '高质量',
+            '专业设计',
+            *adjustment_descriptions
+        ]
+        
+        return ', '.join(prompt_parts)
 
 def generate_image_with_wenxinyige(prompt, image_path=None):   # finished
     """使用文心一格生成图片

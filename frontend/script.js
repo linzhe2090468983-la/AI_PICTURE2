@@ -553,6 +553,15 @@ async function generateImagesFromUpload() {
     // 获取图片描述
     const description = imageDescription.value.trim();
 
+    // 如果有描述，立即添加到图片生成对话历史并更新占位符
+    if (description) {
+        // 立即显示在上一次用户输入内容在对话历史中
+        addImageChatMessage(description, 'user');
+        // 立即清空输入框并设置占位符为"请继续对话..."
+        imageDescription.value = '';
+        imageDescription.placeholder = '请继续对话...';
+    }
+
     // 获取滑块值 - 从HTML控件获取用户输入
     const brightness = parseInt(document.getElementById('brightness').value);
     const contrast = parseInt(document.getElementById('contrast').value);
